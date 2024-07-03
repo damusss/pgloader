@@ -40,6 +40,7 @@ class _ctx:
     sheets = {}
     default_settings = None
     refresh_callbacks = []
+    meta_storage = pgloadermeta._meta.__META_STORAGE__
 
     FOLDER_META_FILENAME = "folder_meta.py"
     FOLDER_PARENT_FILENAME = "folder_parent.meta"
@@ -58,6 +59,7 @@ class _ctx:
         "pnm",
         "svg",
         "tga",
+        "tif",
         "tiff",
         "webp",
         "xpm",
@@ -86,13 +88,13 @@ class _ctx:
                 has_meta,
             )
 
-        def get_raw_surface(self, settings: pgloadermeta._MetaSettings):
+        def get_raw_surface(self, settings: pgloadermeta._meta._MetaSettings):
             alpha = settings.alpha if settings.alpha is not None else True
             img = pygame.image.load(self.asset_path)
             raw_surface = img.convert_alpha() if alpha else img.convert()
             return raw_surface
 
-        def get_scale_funcs(self, settings: pgloadermeta._MetaSettings):
+        def get_scale_funcs(self, settings: pgloadermeta._meta._MetaSettings):
             smooth = settings.smoothscale if settings.smoothscale is not None else False
             return (
                 (pygame.transform.smoothscale if smooth else pygame.transform.scale),
@@ -105,7 +107,7 @@ class _ctx:
 
         def get_image(
             self,
-            settings: pgloadermeta._MetaSettings,
+            settings: pgloadermeta._meta._MetaSettings,
             image,
         ):
             scale, scaleby = self.get_scale_funcs(settings)
@@ -126,7 +128,7 @@ class _ctx:
                 image.set_colorkey(settings.colorkey)
             return image
 
-        def load(self, settings: pgloadermeta._MetaSettings):
+        def load(self, settings: pgloadermeta._meta._MetaSettings):
             raw_surface = self.get_raw_surface(settings)
             image = self.get_image(settings, raw_surface.copy())
             name = f"{self.folder_name}/{self.asset_name}"
@@ -137,8 +139,8 @@ class _ctx:
 
         def load_sheet(
             self,
-            settings: pgloadermeta._MetaSettings,
-            sheet_settings: pgloadermeta._SheetMetaSettings,
+            settings: pgloadermeta._meta._MetaSettings,
+            sheet_settings: pgloadermeta._meta._SheetMetaSettings,
         ):
             raw_surface = self.get_raw_surface(settings)
             main_name = f"{self.folder_name}/{self.asset_name}"
@@ -204,25 +206,23 @@ class _ctx:
             if _ctx.default_settings is not None:
                 default_settings = _ctx.default_settings.copy()
             else:
-                default_settings = pgloadermeta._MetaSettings()
+                default_settings = pgloadermeta._meta._MetaSettings()
             children_settings = {}
             if self.has_meta:
                 content = _ctx.read_file(
                     f"{self.folder_path}/{_ctx.FOLDER_META_FILENAME}"
                 )
                 exec(content)
-                pgloadermeta.__META_STORAGE__.validate("folder")
-                if pgloadermeta.__META_STORAGE__.settings is not None:
-                    default_settings = pgloadermeta.__META_STORAGE__.settings
-                if pgloadermeta.__META_STORAGE__.default_settings is not None:
-                    default_settings = pgloadermeta.__META_STORAGE__.default_settings
-                if pgloadermeta.__META_STORAGE__.children_settings is not None:
+                _ctx.meta_storage.validate("folder")
+                if _ctx.meta_storage.settings is not None:
+                    default_settings = _ctx.meta_storage.settings
+                if _ctx.meta_storage.default_settings is not None:
+                    default_settings = _ctx.meta_storage.default_settings
+                if _ctx.meta_storage.children_settings is not None:
                     for (
                         cname,
                         cs,
-                    ) in (
-                        pgloadermeta.__META_STORAGE__.children_settings.settings.items()
-                    ):
+                    ) in _ctx.meta_storage.children_settings.items():
                         apply_to = []
                         if isinstance(cname, str):
                             apply_to = [cname]
@@ -230,12 +230,12 @@ class _ctx:
                             apply_to = list(cname)
                         for n in apply_to:
                             children_settings[n] = cs
-                pgloadermeta.__META_STORAGE__.reset()
+                _ctx.meta_storage.reset()
             to_use_children_settings = list(children_settings.keys())
             _ctx.folder_images[self.folder_name] = []
             for asset in self.asset_pairs:
-                child_settings: pgloadermeta._MetaSettings = children_settings.get(
-                    asset.asset_name, None
+                child_settings: pgloadermeta._meta._MetaSettings = (
+                    children_settings.get(asset.asset_name, None)
                 )
                 current_settings = default_settings
                 if child_settings is not None:
@@ -248,37 +248,33 @@ class _ctx:
                         f"{self.folder_path}/{asset.asset_name}_meta.py"
                     )
                     exec(content)
-                    pgloadermeta.__META_STORAGE__.validate("asset")
+                    _ctx.meta_storage.validate("asset")
                     if (
-                        pgloadermeta.__META_STORAGE__.settings is None
-                        and pgloadermeta.__META_STORAGE__.sheet_settings is None
-                        and pgloadermeta.__META_STORAGE__.default_settings is None
+                        _ctx.meta_storage.settings is None
+                        and _ctx.meta_storage.sheet_settings is None
+                        and _ctx.meta_storage.default_settings is None
                     ):
                         raise pgloadermeta.MetaError(
                             f"Asset meta ({self.folder_path}) should call meta.settings/meta.default_settings or meta.sheet_settings or both"
                         )
                     if (
-                        pgloadermeta.__META_STORAGE__.settings is not None
-                        and pgloadermeta.__META_STORAGE__.default_settings is None
+                        _ctx.meta_storage.settings is not None
+                        and _ctx.meta_storage.default_settings is None
                     ):
-                        pgloadermeta.__META_STORAGE__.settings.apply_default(
+                        _ctx.meta_storage.settings.apply_default(current_settings)
+                        current_settings = _ctx.meta_storage.settings
+                    if _ctx.meta_storage.default_settings is not None:
+                        _ctx.meta_storage.default_settings.apply_default(
                             current_settings
                         )
-                        current_settings = pgloadermeta.__META_STORAGE__.settings
-                    if pgloadermeta.__META_STORAGE__.default_settings is not None:
-                        pgloadermeta.__META_STORAGE__.default_settings.apply_default(
-                            current_settings
-                        )
-                        current_settings = (
-                            pgloadermeta.__META_STORAGE__.default_settings
-                        )
-                    if pgloadermeta.__META_STORAGE__.sheet_settings is not None:
-                        sheet_settings = pgloadermeta.__META_STORAGE__.sheet_settings
+                        current_settings = _ctx.meta_storage.default_settings
+                    if _ctx.meta_storage.sheet_settings is not None:
+                        sheet_settings = _ctx.meta_storage.sheet_settings
                         sheet_settings.coordinate_settings = {
                             pos: s.apply_default(current_settings)
                             for pos, s in sheet_settings.coordinate_settings.items()
                         }
-                    pgloadermeta.__META_STORAGE__.reset()
+                    _ctx.meta_storage.reset()
                 if sheet_settings is None:
                     asset.load(current_settings)
                 else:
@@ -307,7 +303,7 @@ class Image:
     def __refresh__(self, raw_surface, image, load_settings):
         self.raw_surface: pygame.Surface = raw_surface
         self.image: pygame.Surface = image
-        self.load_settings: pgloadermeta._MetaSettings = load_settings
+        self.load_settings: pgloadermeta._meta._MetaSettings = load_settings
         self.rect: pygame.Rect = self.image.get_rect()
         self.frect: pygame.FRect = self.image.get_frect()
         self.width: int = self.image.width
@@ -392,7 +388,7 @@ def default_settings(
     global_alpha: int = None,
     smoothscale: bool = None,
 ):
-    _ctx.default_settings = pgloadermeta._MetaSettings(
+    _ctx.default_settings = pgloadermeta._meta._MetaSettings(
         alpha, size, scale, unit_size, colorkey, global_alpha, smoothscale
     )
 
@@ -405,7 +401,7 @@ def load(folder: str, unit: float = None):
     if not os.path.exists(folder):
         raise LoadError("Folder does not exist")
     _ctx.load_folder = folder
-    pgloadermeta.__META_STORAGE__.reset()
+    _ctx.meta_storage.reset()
 
     parent_folders = {}
     pending_folders = []
@@ -491,7 +487,7 @@ def reload(unit: float = None):
 def refresh(unit: float = None):
     if unit is not None:
         set_unit(unit)
-    pgloadermeta.__META_STORAGE__.reset()
+    _ctx.meta_storage.reset()
     for folder in _ctx.folders:
         folder.load()
     for func in _ctx.refresh_callbacks:
